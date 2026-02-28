@@ -35,28 +35,26 @@ public class AttendanceRepository {
     }
 
     public void ensureSchema() throws SQLException {
-        synchronized (SQLiteConnectionManager.schemaLock()) {
-            String tableSql = """
-                    CREATE TABLE IF NOT EXISTS attendance (
-                        id INTEGER PRIMARY KEY,
-                        employee_id INTEGER NOT NULL,
-                        date TEXT NOT NULL,
-                        status TEXT NOT NULL,
-                        created_at TEXT,
-                        updated_at TEXT,
-                        UNIQUE(employee_id, date)
-                    )
-                    """;
-            String idxEmployee = "CREATE INDEX IF NOT EXISTS idx_attendance_employee_id ON attendance(employee_id)";
+        String tableSql = """
+                CREATE TABLE IF NOT EXISTS attendance (
+                    id INTEGER PRIMARY KEY,
+                    employee_id INTEGER NOT NULL,
+                    date TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT,
+                    updated_at TEXT,
+                    UNIQUE(employee_id, date)
+                )
+                """;
+        String idxEmployee = "CREATE INDEX IF NOT EXISTS idx_attendance_employee_id ON attendance(employee_id)";
 
-            Connection connection = SQLiteConnectionManager.getInstance().borrowConnection();
-            try (PreparedStatement table = connection.prepareStatement(tableSql);
-                    PreparedStatement idx = connection.prepareStatement(idxEmployee)) {
-                table.executeUpdate();
-                idx.executeUpdate();
-            } finally {
-                SQLiteConnectionManager.getInstance().returnConnection(connection);
-            }
+        Connection connection = SQLiteConnectionManager.getInstance().borrowConnection();
+        try (PreparedStatement table = connection.prepareStatement(tableSql);
+                PreparedStatement idx = connection.prepareStatement(idxEmployee)) {
+            table.executeUpdate();
+            idx.executeUpdate();
+        } finally {
+            SQLiteConnectionManager.getInstance().returnConnection(connection);
         }
     }
 

@@ -5,15 +5,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import util.AppConstants;
 
 public final class SQLiteConnectionManager implements ConnectionPool {
-    private static final Object SCHEMA_LOCK = new Object();
-
     private final Deque<Connection> available = new ArrayDeque<>();
     private final String jdbcUrl;
     private final int maxPoolSize;
@@ -33,10 +30,6 @@ public final class SQLiteConnectionManager implements ConnectionPool {
         return Holder.INSTANCE;
     }
 
-    public static Object schemaLock() {
-        return SCHEMA_LOCK;
-    }
-
     @Override
     public synchronized Connection borrowConnection() throws SQLException {
         ensureDatabaseFileExists();
@@ -51,10 +44,10 @@ public final class SQLiteConnectionManager implements ConnectionPool {
 
         if (totalConnections < maxPoolSize) {
             totalConnections++;
-            return createConnection();
+            return DriverManager.getConnection(jdbcUrl);
         }
 
-        return createConnection();
+        return DriverManager.getConnection(jdbcUrl);
     }
 
     @Override
@@ -93,10 +86,7 @@ public final class SQLiteConnectionManager implements ConnectionPool {
     private void ensureDatabaseFileExists() throws SQLException {
         try {
             Path path = DatabaseConfig.databasePath();
-            Path parent = path.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
+            Files.createDirectories(path.getParent());
             if (Files.notExists(path)) {
                 Files.createFile(path);
             }
@@ -109,44 +99,6 @@ public final class SQLiteConnectionManager implements ConnectionPool {
         try {
             connection.close();
         } catch (SQLException ignored) {
-        }
-    }
-
-    private Connection createConnection() throws SQLException {
-        SQLException last = null;
-        for (int attempt = 1; attempt <= 3; attempt++) {
-            try {
-                Connection connection = DriverManager.getConnection(jdbcUrl);
-                initializeConnection(connection);
-                return connection;
-            } catch (SQLException ex) {
-                last = ex;
-                if (attempt < 3) {
-                    try {
-                        Thread.sleep(120L * attempt);
-                    } catch (InterruptedException interruptedException) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
-            }
-        }
-        throw new SQLException("Unable to create SQLite connection after retries.", last);
-    }
-
-    private void initializeConnection(Connection connection) throws SQLException {
-        applyPragma(connection, "PRAGMA busy_timeout = 5000", false);
-        applyPragma(connection, "PRAGMA journal_mode = WAL", true);
-        applyPragma(connection, "PRAGMA synchronous = NORMAL", true);
-    }
-
-    private void applyPragma(Connection connection, String sql, boolean optional) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.execute();
-        } catch (SQLException ex) {
-            if (!optional) {
-                throw ex;
-            }
         }
     }
 }

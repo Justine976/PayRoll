@@ -22,30 +22,28 @@ public class EmployeeRepository {
     private static final String EXISTS_ID_SQL = "SELECT 1 FROM employees WHERE id = ? LIMIT 1";
 
     public void ensureSchema() throws SQLException {
-        synchronized (SQLiteConnectionManager.schemaLock()) {
-            String tableSql = """
-                    CREATE TABLE IF NOT EXISTS employees (
-                        id INTEGER PRIMARY KEY,
-                        full_name TEXT NOT NULL,
-                        position TEXT NOT NULL,
-                        monthly_salary REAL NOT NULL,
-                        created_at TEXT,
-                        updated_at TEXT
-                    )
-                    """;
-            String nameIndex = "CREATE INDEX IF NOT EXISTS idx_employees_full_name ON employees(full_name)";
-            String posIndex = "CREATE INDEX IF NOT EXISTS idx_employees_position ON employees(position)";
+        String tableSql = """
+                CREATE TABLE IF NOT EXISTS employees (
+                    id INTEGER PRIMARY KEY,
+                    full_name TEXT NOT NULL,
+                    position TEXT NOT NULL,
+                    monthly_salary REAL NOT NULL,
+                    created_at TEXT,
+                    updated_at TEXT
+                )
+                """;
+        String nameIndex = "CREATE INDEX IF NOT EXISTS idx_employees_full_name ON employees(full_name)";
+        String posIndex = "CREATE INDEX IF NOT EXISTS idx_employees_position ON employees(position)";
 
-            Connection connection = SQLiteConnectionManager.getInstance().borrowConnection();
-            try (PreparedStatement table = connection.prepareStatement(tableSql);
-                    PreparedStatement idx1 = connection.prepareStatement(nameIndex);
-                    PreparedStatement idx2 = connection.prepareStatement(posIndex)) {
-                table.executeUpdate();
-                idx1.executeUpdate();
-                idx2.executeUpdate();
-            } finally {
-                SQLiteConnectionManager.getInstance().returnConnection(connection);
-            }
+        Connection connection = SQLiteConnectionManager.getInstance().borrowConnection();
+        try (PreparedStatement table = connection.prepareStatement(tableSql);
+                PreparedStatement idx1 = connection.prepareStatement(nameIndex);
+                PreparedStatement idx2 = connection.prepareStatement(posIndex)) {
+            table.executeUpdate();
+            idx1.executeUpdate();
+            idx2.executeUpdate();
+        } finally {
+            SQLiteConnectionManager.getInstance().returnConnection(connection);
         }
     }
 
@@ -149,52 +147,6 @@ public class EmployeeRepository {
         }
     }
 
-    public List<Employee> findFiltered(String keyword, String position, String sortKey) throws SQLException {
-        StringBuilder sql = new StringBuilder("SELECT id, full_name, position, monthly_salary, created_at, updated_at FROM employees WHERE 1=1");
-        List<Object> params = new ArrayList<>();
-
-        if (keyword != null && !keyword.isBlank()) {
-            sql.append(" AND (lower(full_name) LIKE ? OR lower(position) LIKE ?)");
-            String token = "%" + keyword.toLowerCase() + "%";
-            params.add(token);
-            params.add(token);
-        }
-
-        if (position != null && !position.isBlank()) {
-            sql.append(" AND position = ?");
-            params.add(position);
-        }
-
-        sql.append(" ORDER BY ").append(resolveSort(sortKey));
-
-        Connection connection = SQLiteConnectionManager.getInstance().borrowConnection();
-        try (PreparedStatement statement = connection.prepareStatement(sql.toString())) {
-            for (int i = 0; i < params.size(); i++) {
-                statement.setObject(i + 1, params.get(i));
-            }
-            try (ResultSet rs = statement.executeQuery()) {
-                return mapRows(rs);
-            }
-        } finally {
-            SQLiteConnectionManager.getInstance().returnConnection(connection);
-        }
-    }
-
-    public List<String> findDistinctPositions() throws SQLException {
-        String sql = "SELECT DISTINCT position FROM employees WHERE position IS NOT NULL AND trim(position) <> '' ORDER BY position";
-        Connection connection = SQLiteConnectionManager.getInstance().borrowConnection();
-        try (PreparedStatement statement = connection.prepareStatement(sql);
-                ResultSet rs = statement.executeQuery()) {
-            List<String> values = new ArrayList<>();
-            while (rs.next()) {
-                values.add(rs.getString("position"));
-            }
-            return values;
-        } finally {
-            SQLiteConnectionManager.getInstance().returnConnection(connection);
-        }
-    }
-
 
     public boolean existsById(long id) throws SQLException {
         Connection connection = SQLiteConnectionManager.getInstance().borrowConnection();
@@ -246,18 +198,5 @@ public class EmployeeRepository {
 
     private LocalDateTime asDateTime(String text) {
         return text == null ? null : Timestamp.valueOf(text).toLocalDateTime();
-    }
-
-    private String resolveSort(String sortKey) {
-        if (sortKey == null) {
-            return "id DESC";
-        }
-        return switch (sortKey) {
-            case "NAME_ASC" -> "full_name ASC, id DESC";
-            case "NAME_DESC" -> "full_name DESC, id DESC";
-            case "SALARY_ASC" -> "monthly_salary ASC, id DESC";
-            case "SALARY_DESC" -> "monthly_salary DESC, id DESC";
-            default -> "id DESC";
-        };
     }
 }

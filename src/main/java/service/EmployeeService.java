@@ -45,26 +45,6 @@ public class EmployeeService {
         }
     }
 
-    public List<Employee> filterAndSort(String keyword, String position, String sortKey) {
-        String normalizedKeyword = normalize(keyword);
-        String normalizedPosition = normalize(position);
-        try {
-            return repository().findFiltered(normalizedKeyword,
-                    normalizedPosition.equalsIgnoreCase("ALL") ? "" : normalizedPosition,
-                    sortKey);
-        } catch (SQLException ex) {
-            throw new IllegalStateException("Unable to filter employees.");
-        }
-    }
-
-    public List<String> listPositions() {
-        try {
-            return repository().findDistinctPositions();
-        } catch (SQLException ex) {
-            throw new IllegalStateException("Unable to load position filters.");
-        }
-    }
-
     public Employee create(String fullName, String position, String salaryText) {
         String name = required(fullName, "Name is required.");
         String role = required(position, "Position is required.");

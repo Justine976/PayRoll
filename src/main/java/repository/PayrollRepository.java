@@ -22,32 +22,30 @@ public class PayrollRepository {
     private static final String RECENT_SQL = "SELECT processed_at FROM payroll WHERE processed_at IS NOT NULL ORDER BY processed_at DESC LIMIT 1";
 
     public void ensureSchema() throws SQLException {
-        synchronized (SQLiteConnectionManager.schemaLock()) {
-            String tableSql = """
-                    CREATE TABLE IF NOT EXISTS payroll (
-                      id INTEGER PRIMARY KEY,
-                      employee_id INTEGER NOT NULL,
-                      month TEXT NOT NULL,
-                      base_salary REAL NOT NULL,
-                      effective_work_days REAL NOT NULL,
-                      required_work_days REAL NOT NULL,
-                      computed_salary REAL NOT NULL,
-                      status TEXT NOT NULL,
-                      processed_at TEXT,
-                      created_at TEXT,
-                      updated_at TEXT,
-                      UNIQUE(employee_id, month)
-                    )
-                    """;
-            String idx = "CREATE INDEX IF NOT EXISTS idx_payroll_employee_id ON payroll(employee_id)";
+        String tableSql = """
+                CREATE TABLE IF NOT EXISTS payroll (
+                  id INTEGER PRIMARY KEY,
+                  employee_id INTEGER NOT NULL,
+                  month TEXT NOT NULL,
+                  base_salary REAL NOT NULL,
+                  effective_work_days REAL NOT NULL,
+                  required_work_days REAL NOT NULL,
+                  computed_salary REAL NOT NULL,
+                  status TEXT NOT NULL,
+                  processed_at TEXT,
+                  created_at TEXT,
+                  updated_at TEXT,
+                  UNIQUE(employee_id, month)
+                )
+                """;
+        String idx = "CREATE INDEX IF NOT EXISTS idx_payroll_employee_id ON payroll(employee_id)";
 
-            Connection c = SQLiteConnectionManager.getInstance().borrowConnection();
-            try (PreparedStatement t = c.prepareStatement(tableSql); PreparedStatement i = c.prepareStatement(idx)) {
-                t.executeUpdate();
-                i.executeUpdate();
-            } finally {
-                SQLiteConnectionManager.getInstance().returnConnection(c);
-            }
+        Connection c = SQLiteConnectionManager.getInstance().borrowConnection();
+        try (PreparedStatement t = c.prepareStatement(tableSql); PreparedStatement i = c.prepareStatement(idx)) {
+            t.executeUpdate();
+            i.executeUpdate();
+        } finally {
+            SQLiteConnectionManager.getInstance().returnConnection(c);
         }
     }
 
