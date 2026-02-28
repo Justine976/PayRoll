@@ -1,18 +1,12 @@
 package ui;
 
 import config.ThemeManager;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.YearMonth;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
@@ -160,7 +154,6 @@ public class MainView {
                     employeeNameMap = map;
                     sidePanel.setAttendanceEmployeeOptions(employeeNameMap);
                     workspace.getAttendancePanel().setEmployeeOptions(employeeNameMap);
-                    workspace.setEmployeeFilterOptions(employeeService.listPositions());
                 });
             } catch (IllegalStateException ex) {
                 Platform.runLater(() -> DialogUtil.showError(window(), "Employee Module", ex.getMessage()));
@@ -174,9 +167,9 @@ public class MainView {
             }
         });
 
-        workspace.setEmployeeQueryHandler(query -> {
+        workspace.setSearchHandler(keyword -> {
             if (sidePanel.getMode() != SideControlPanel.Mode.EMPLOYEE) return;
-            CompletableFuture.supplyAsync(() -> employeeService.filterAndSort(query.keyword(), query.positionFilter(), query.sortKey()))
+            CompletableFuture.supplyAsync(() -> employeeService.search(keyword))
                     .thenAccept(results -> Platform.runLater(() -> workspace.getEmployeePanel().setData(results)))
                     .exceptionally(ex -> {
                         Platform.runLater(() -> DialogUtil.showError(window(), "Search", "Unable to perform employee search."));
@@ -306,20 +299,8 @@ public class MainView {
                 else if (sidePanel.getMode() == SideControlPanel.Mode.PAYROLL) deletePayroll();
             }
 
-            @Override public void onImport() {
-                if (sidePanel.getMode() == SideControlPanel.Mode.EMPLOYEE) {
-                    importEmployees();
-                } else {
-                    DialogUtil.showWarning(window(), "Import", "Import is currently available for employees only.");
-                }
-            }
-            @Override public void onExport() {
-                if (sidePanel.getMode() == SideControlPanel.Mode.EMPLOYEE) {
-                    exportEmployees();
-                } else {
-                    DialogUtil.showWarning(window(), "Export", "Export is currently available for employees only.");
-                }
-            }
+            @Override public void onImport() { DialogUtil.showWarning(window(), "Import", "Import feature will be implemented in a later phase."); }
+            @Override public void onExport() { DialogUtil.showWarning(window(), "Export", "Export feature will be implemented in a later phase."); }
         });
     }
 
@@ -351,7 +332,6 @@ public class MainView {
                     employeeNameMap.put(saved.getId(), saved.getFullName());
                     sidePanel.setAttendanceEmployeeOptions(employeeNameMap);
                     workspace.getAttendancePanel().setEmployeeOptions(employeeNameMap);
-                    workspace.setEmployeeFilterOptions(employeeService.listPositions());
                     sidePanel.clearForm();
                     refreshDashboardAsync(workspace.getPayrollPanel().selectedMonth());
                     DialogUtil.showSuccess(window(), "Employee", "Employee added successfully.");
@@ -370,7 +350,6 @@ public class MainView {
                         employeeNameMap.put(updated.getId(), updated.getFullName());
                         sidePanel.setAttendanceEmployeeOptions(employeeNameMap);
                         workspace.getAttendancePanel().setEmployeeOptions(employeeNameMap);
-                        workspace.setEmployeeFilterOptions(employeeService.listPositions());
                         sidePanel.clearForm();
                         DialogUtil.showSuccess(window(), "Employee", "Employee updated successfully.");
                     }))
@@ -397,7 +376,6 @@ public class MainView {
                     ids.forEach(employeeNameMap::remove);
                     sidePanel.setAttendanceEmployeeOptions(employeeNameMap);
                     workspace.getAttendancePanel().setEmployeeOptions(employeeNameMap);
-                    workspace.setEmployeeFilterOptions(employeeService.listPositions());
                     sidePanel.clearForm();
                     refreshDashboardAsync(workspace.getPayrollPanel().selectedMonth());
                     DialogUtil.showSuccess(window(), "Employee", "Deleted " + affected + " employee(s).");
@@ -538,127 +516,6 @@ public class MainView {
 
     private javafx.stage.Window window() { return root.getScene() == null ? null : root.getScene().getWindow(); }
     private void showFallback() { root.getChildren().setAll(new Label("Initialization failed.")); }
-
-    private void importEmployees() {
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle("Import Employees (CSV)");
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV Files", "*.csv"));
-        var file = chooser.showOpenDialog(window());
-        if (file == null) return;
-
-        if (!beginUiOperation()) return;
-        CompletableFuture.supplyAsync(() -> importAndReloadEmployees(file.toPath()))
-                .thenAccept(result -> Platform.runLater(() -> {
-                    employeeNameMap = toNameMap(result.rows());
-                    workspace.getEmployeePanel().setData(result.rows());
-                    sidePanel.setAttendanceEmployeeOptions(employeeNameMap);
-                    workspace.getAttendancePanel().setEmployeeOptions(employeeNameMap);
-                    workspace.setEmployeeFilterOptions(result.positions());
-                    DialogUtil.showSuccess(window(), "Import", "Imported: " + result.imported() + ", Skipped: " + result.skipped());
-                }))
-                .exceptionally(ex -> {
-                    Platform.runLater(() -> DialogUtil.showError(window(), "Import", rootCauseMessage(ex)));
-                    return null;
-                })
-                .whenComplete((ignore, ex) -> endUiOperation());
-    }
-
-    private void exportEmployees() {
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle("Export Employees (CSV)");
-        chooser.setInitialFileName("employees-export.csv");
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV Files", "*.csv"));
-        var file = chooser.showSaveDialog(window());
-        if (file == null) return;
-
-        if (!beginUiOperation()) return;
-        var snapshot = workspace.getEmployeePanel().getAllEmployees();
-        CompletableFuture.runAsync(() -> exportEmployeeCsv(file.toPath(), snapshot))
-                .thenRun(() -> Platform.runLater(() -> DialogUtil.showSuccess(window(), "Export", "Employee export completed.")))
-                .exceptionally(ex -> {
-                    Platform.runLater(() -> DialogUtil.showError(window(), "Export", rootCauseMessage(ex)));
-                    return null;
-                })
-                .whenComplete((ignore, ex) -> endUiOperation());
-    }
-
-    private ImportResult importAndReloadEmployees(Path csvPath) {
-        ImportCounters counters = importEmployeeCsv(csvPath);
-        List<Employee> refreshed = employeeService.findAll();
-        List<String> positions = employeeService.listPositions();
-        return new ImportResult(counters.imported(), counters.skipped(), refreshed, positions);
-    }
-
-    private ImportCounters importEmployeeCsv(Path csvPath) {
-        int imported = 0;
-        int skipped = 0;
-        try (BufferedReader reader = Files.newBufferedReader(csvPath, StandardCharsets.UTF_8)) {
-            String line;
-            boolean firstRow = true;
-            Set<String> seen = new java.util.HashSet<>();
-            while ((line = reader.readLine()) != null) {
-                if (line.isBlank()) continue;
-                String[] cols = line.split(",", -1);
-                if (firstRow && cols.length >= 3 && "full_name".equalsIgnoreCase(cols[0].trim())) {
-                    firstRow = false;
-                    continue;
-                }
-                firstRow = false;
-                if (cols.length < 3) {
-                    skipped++;
-                    continue;
-                }
-                String name = cols[0].trim();
-                String position = cols[1].trim();
-                String salaryText = cols[2].trim();
-                String key = (name + "|" + position).toLowerCase();
-                if (seen.contains(key)) {
-                    skipped++;
-                    continue;
-                }
-                seen.add(key);
-                try {
-                    employeeService.create(name, position, salaryText);
-                    imported++;
-                } catch (RuntimeException ex) {
-                    skipped++;
-                }
-            }
-            return new ImportCounters(imported, skipped);
-        } catch (IOException ex) {
-            throw new IllegalStateException("Unable to read import file.");
-        }
-    }
-
-    private void exportEmployeeCsv(Path csvPath, List<Employee> rows) {
-        try (BufferedWriter writer = Files.newBufferedWriter(csvPath, StandardCharsets.UTF_8)) {
-            writer.write("full_name,position,monthly_salary");
-            writer.newLine();
-            for (Employee employee : rows) {
-                writer.write(escapeCsv(employee.getFullName()));
-                writer.write(',');
-                writer.write(escapeCsv(employee.getPosition()));
-                writer.write(',');
-                writer.write(String.valueOf(employee.getMonthlySalary()));
-                writer.newLine();
-            }
-        } catch (IOException ex) {
-            throw new IllegalStateException("Unable to write export file.");
-        }
-    }
-
-    private String escapeCsv(String value) {
-        if (value == null) return "";
-        String escaped = value.replace("\"", "\"\"");
-        if (escaped.contains(",") || escaped.contains("\"") || escaped.contains("\n")) {
-            return "\"" + escaped + "\"";
-        }
-        return escaped;
-    }
-
-    private record ImportCounters(int imported, int skipped) {}
-
-    private record ImportResult(int imported, int skipped, List<Employee> rows, List<String> positions) {}
 
     private boolean beginUiOperation() {
         if (!operationInProgress.compareAndSet(false, true)) {

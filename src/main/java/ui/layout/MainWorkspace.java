@@ -4,12 +4,10 @@ import java.util.function.Consumer;
 import javafx.animation.PauseTransition;
 import javafx.geometry.Insets;
 import javafx.scene.Parent;
-import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
-import javafx.collections.FXCollections;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -32,14 +30,8 @@ public class MainWorkspace extends VBox {
     private final PayrollPanel payrollPanel = new PayrollPanel();
     private final SettingsPanel settingsPanel = new SettingsPanel();
     private final TextField searchField = new TextField();
-    private final ComboBox<String> filterSelector = new ComboBox<>();
-    private final ComboBox<String> sortSelector = new ComboBox<>();
     private final PauseTransition debounce = new PauseTransition(Duration.millis(280));
     private Consumer<String> activeTabListener;
-    private Consumer<EmployeeQuery> employeeQueryHandler;
-
-    public record EmployeeQuery(String keyword, String positionFilter, String sortKey) {
-    }
 
     public MainWorkspace() {
         getStyleClass().add("workspace-root");
@@ -63,22 +55,6 @@ public class MainWorkspace extends VBox {
         searchField.textProperty().addListener((obs, oldText, newText) -> debounce.playFromStart());
     }
 
-    public void setEmployeeQueryHandler(Consumer<EmployeeQuery> handler) {
-        this.employeeQueryHandler = handler;
-    }
-
-    public void setEmployeeFilterOptions(java.util.Collection<String> positions) {
-        var items = FXCollections.<String>observableArrayList();
-        items.add("ALL");
-        if (positions != null) {
-            items.addAll(positions);
-        }
-        filterSelector.setItems(items);
-        if (filterSelector.getValue() == null || !items.contains(filterSelector.getValue())) {
-            filterSelector.getSelectionModel().selectFirst();
-        }
-    }
-
     public void setActiveTabListener(Consumer<String> listener) { this.activeTabListener = listener; }
 
     private void registerViews() {
@@ -91,36 +67,14 @@ public class MainWorkspace extends VBox {
     private HBox buildToolbar() {
         searchField.setPromptText("Search by name or position...");
         HBox.setHgrow(searchField, Priority.ALWAYS);
-
-        filterSelector.setPromptText("Filter");
-        filterSelector.getStyleClass().add("toolbar-chip");
-        filterSelector.getItems().setAll("ALL");
-        filterSelector.getSelectionModel().selectFirst();
-
-        sortSelector.setPromptText("Sort");
-        sortSelector.getStyleClass().add("toolbar-chip");
-        sortSelector.getItems().setAll("DEFAULT", "NAME_ASC", "NAME_DESC", "SALARY_ASC", "SALARY_DESC");
-        sortSelector.getSelectionModel().selectFirst();
-
-        searchField.textProperty().addListener((obs, oldText, newText) -> debounce.playFromStart());
-        filterSelector.valueProperty().addListener((obs, oldVal, newVal) -> debounce.playFromStart());
-        sortSelector.valueProperty().addListener((obs, oldVal, newVal) -> debounce.playFromStart());
-        debounce.setOnFinished(event -> publishEmployeeQuery());
-
-        HBox toolbar = new HBox(8, searchField, filterSelector, sortSelector);
+        Label filterPlaceholder = new Label("Filter: All");
+        filterPlaceholder.getStyleClass().add("toolbar-chip");
+        Label sortPlaceholder = new Label("Sort: Default");
+        sortPlaceholder.getStyleClass().add("toolbar-chip");
+        HBox toolbar = new HBox(8, searchField, filterPlaceholder, sortPlaceholder);
         toolbar.getStyleClass().add("workspace-toolbar");
         toolbar.setPadding(new Insets(8));
         return toolbar;
-    }
-
-    private void publishEmployeeQuery() {
-        if (employeeQueryHandler == null) {
-            return;
-        }
-        employeeQueryHandler.accept(new EmployeeQuery(
-                searchField.getText(),
-                filterSelector.getValue(),
-                sortSelector.getValue()));
     }
 
     private TabPane buildTabs() {

@@ -98,8 +98,4 @@ public class EmployeePanel {
     public int selectedCount() {
         return tableView.getSelectionModel().getSelectedItems().size();
     }
-
-    public List<Employee> getAllEmployees() {
-        return List.copyOf(employees);
-    }
 }
